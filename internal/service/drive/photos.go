@@ -235,6 +235,10 @@ func (s *Service) PhotoDownload(ctx context.Context, dc *Context, linkID string,
 	if err != nil {
 		return "", err
 	}
+	resolved := &Resolved{ShareID: dc.ShareID, LinkID: linkID, ParentKR: parentKR, NodeKR: nodeKR}
+	if err := s.verifyDownloadMetadata(ctx, dc, resolved, link); err != nil {
+		return "", err
+	}
 	return name, s.downloadFile(ctx, dc.ShareID, link, nodeKR, w, opts)
 }
 

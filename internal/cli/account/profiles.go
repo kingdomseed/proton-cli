@@ -58,11 +58,19 @@ func profilesDeleteCmd() *cobra.Command {
 		Short: "Remove saved sessions by profile name",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: kit.Run(nil, func(c *kit.Invocation) error {
+			names := make([]string, len(c.Args))
+			for i, name := range c.Args {
+				validated, err := session.NormalizeProfile(name)
+				if err != nil {
+					return kit.Fail("Invalid profile %q: %v.", name, err)
+				}
+				names[i] = validated
+			}
 			return kit.Mutate(c, ui.ResultSpec{
-				Action: ui.Deleted, Kind: "profiles", Count: len(c.Args),
-				Name: single(c.Args), IDs: c.Args,
+				Action: ui.Deleted, Kind: "profiles", Count: len(names),
+				Name: single(names), IDs: names,
 			}, func() error {
-				for _, name := range c.Args {
+				for _, name := range names {
 					if err := session.Clear(name); err != nil {
 						return err
 					}

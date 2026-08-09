@@ -1,6 +1,8 @@
 package kit
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -79,6 +81,38 @@ func TestDestinationCollisionPolicy(t *testing.T) {
 			t.Errorf("wrote to %q, want %q", got, want)
 		}
 	})
+}
+
+func TestWriteStreamCommitsOnlyCompleteOutput(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "mail.mbox")
+	d := &Destination{output: target}
+	got, err := d.WriteStream(nil, "ignored", func(w io.Writer) error {
+		if _, err := io.WriteString(w, "first"); err != nil {
+			return err
+		}
+		_, err := io.WriteString(w, " second")
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != target || read(t, target) != "first second" {
+		t.Errorf("WriteStream wrote %q to %q", read(t, target), got)
+	}
+
+	failedTarget := filepath.Join(dir, "failed.mbox")
+	d = &Destination{output: failedTarget}
+	_, err = d.WriteStream(nil, "ignored", func(w io.Writer) error {
+		_, _ = io.WriteString(w, "partial")
+		return errors.New("stop")
+	})
+	if err == nil {
+		t.Fatal("WriteStream ignored the producer error")
+	}
+	if exists(failedTarget) {
+		t.Error("WriteStream left a partial final file")
+	}
 }
 
 // A double extension keeps the part that identifies the format.

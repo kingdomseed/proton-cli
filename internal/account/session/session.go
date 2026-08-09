@@ -4,6 +4,7 @@ package session
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -43,6 +44,30 @@ type Profile struct {
 	Email       string `json:"email,omitempty"`
 	Unlocked    bool   `json:"unlocked"`
 	PersistedAt int64  `json:"persisted_at,omitempty"`
+}
+
+const maxProfileNameBytes = 64
+
+// NormalizeProfile validates the name used for every profile-scoped local
+// resource. An empty name selects the default profile.
+func NormalizeProfile(profile string) (string, error) {
+	if profile == "" {
+		return "default", nil
+	}
+	if len(profile) > maxProfileNameBytes {
+		return "", fmt.Errorf("profile name is longer than %d bytes", maxProfileNameBytes)
+	}
+	for i := 0; i < len(profile); i++ {
+		c := profile[i]
+		alphanumeric := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		if i == 0 && !alphanumeric {
+			return "", fmt.Errorf("profile name must start with an ASCII letter or number")
+		}
+		if !alphanumeric && c != '.' && c != '_' && c != '-' {
+			return "", fmt.Errorf("profile name can contain only ASCII letters, numbers, dot, underscore, and hyphen")
+		}
+	}
+	return profile, nil
 }
 
 // Profiles lists the profiles that have a saved session, sorted by name.
@@ -95,16 +120,23 @@ func Path(profile string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pathIn(d, profile), nil
+	return pathIn(d, profile)
 }
 
 // pathIn resolves the session-file path for profile within base config dir d.
 // Split out from Path so it can be tested against a temp dir.
-func pathIn(d, profile string) string {
-	if profile == "" {
-		profile = "default"
+func pathIn(d, profile string) (string, error) {
+	name, err := NormalizeProfile(profile)
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(d, "sessions", profile+".json")
+	sessionsDir := filepath.Join(d, "sessions")
+	p := filepath.Join(sessionsDir, name+".json")
+	rel, err := filepath.Rel(sessionsDir, p)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("profile path escapes the session directory")
+	}
+	return p, nil
 }
 
 // Load reads the session for the given profile. Returns nil (no error) when
@@ -132,15 +164,11 @@ func Load(profile string) (*Session, error) {
 }
 
 func Save(profile string, s *Session) error {
-	if profile == "" {
-		profile = "default"
-	}
-	s.PersistedAt = time.Now().Unix()
-	d, err := Dir()
+	newPath, err := Path(profile)
 	if err != nil {
 		return err
 	}
-	newPath := filepath.Join(d, "sessions", profile+".json")
+	s.PersistedAt = time.Now().Unix()
 	if err := os.MkdirAll(filepath.Dir(newPath), 0700); err != nil {
 		return err
 	}

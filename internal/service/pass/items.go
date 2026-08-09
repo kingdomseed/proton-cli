@@ -360,12 +360,18 @@ func (s *Service) ItemEdit(ctx context.Context, u *keys.Unlocked, shareID, itemI
 	if !ok {
 		return fmt.Errorf("no share key for rotation %d", r.Item.KeyRotation)
 	}
-	ikBytes, _ := base64.StdEncoding.DecodeString(r.Item.ItemKey)
+	ikBytes, err := base64.StdEncoding.DecodeString(r.Item.ItemKey)
+	if err != nil {
+		return fmt.Errorf("decode item key: %w", err)
+	}
 	itemKey, err := aead.Decrypt(shareKey, ikBytes, []byte(aead.TagItemKey))
 	if err != nil {
 		return err
 	}
-	cBytes, _ := base64.StdEncoding.DecodeString(r.Item.Content)
+	cBytes, err := base64.StdEncoding.DecodeString(r.Item.Content)
+	if err != nil {
+		return fmt.Errorf("decode item content: %w", err)
+	}
 	plain, err := aead.Decrypt(itemKey, cBytes, []byte(aead.TagItemContent))
 	if err != nil {
 		return err
@@ -481,24 +487,20 @@ func (s *Service) ItemEdit(ctx context.Context, u *keys.Unlocked, shareID, itemI
 			}
 		}
 	}
-	pbBytes, _ := proto.Marshal(&it)
+	pbBytes, err := proto.Marshal(&it)
+	if err != nil {
+		return err
+	}
 	ct, err := aead.Encrypt(itemKey, pbBytes, []byte(aead.TagItemContent))
 	if err != nil {
 		return err
 	}
-	var latest struct {
-		Key struct {
-			Key         string
-			KeyRotation int
-		}
-	}
-	_ = s.C.Decode(ctx, proton.Request{Method: "GET", Path: fmt.Sprintf("/pass/v1/share/%s/item/%s/key/latest", shareID, itemID)}, &latest)
 	return s.C.Decode(ctx, proton.Request{
 		Method: "PUT", Path: fmt.Sprintf("/pass/v1/share/%s/item/%s", shareID, itemID),
 		Body: map[string]any{
 			"Content":              base64.StdEncoding.EncodeToString(ct),
 			"ContentFormatVersion": 7,
-			"KeyRotation":          latest.Key.KeyRotation,
+			"KeyRotation":          r.Item.KeyRotation,
 			"LastRevision":         r.Item.Revision,
 		},
 	}, nil)

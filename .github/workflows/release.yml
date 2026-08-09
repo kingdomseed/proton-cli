@@ -30,7 +30,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -71,12 +71,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
@@ -121,7 +121,7 @@ jobs:
           echo "✓ smoke test passed for ${GOOS}/${GOARCH}"
 
       - name: Upload helper artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: hv-helper-${{ matrix.goos }}-${{ matrix.goarch }}
           path: internal/hv/assets/proton-cli-hv-*
@@ -133,18 +133,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.prepare.outputs.tag }}
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
       - name: Download all helper artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: internal/hv/assets
           pattern: hv-helper-*
@@ -157,8 +157,7 @@ jobs:
 
       - name: Run GoReleaser
         id: goreleaser
-        continue-on-error: true
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
           version: "~> v2"
@@ -188,7 +187,30 @@ jobs:
             echo "::error::GitHub release $TAG is missing required assets: ${missing[*]}"
             exit 1
           fi
-          echo "GitHub release $TAG has all required assets."
+          verify_dir=$(mktemp -d)
+          trap 'rm -rf "$verify_dir"' EXIT
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern checksums.txt --dir "$verify_dir"
+
+          required=(
+            proton-cli_linux_amd64 proton-cli_linux_arm64
+            proton-cli_darwin_amd64 proton-cli_darwin_arm64
+            proton-cli_windows_amd64.exe
+          )
+          while IFS= read -r asset; do required+=("$asset"); done < <(grep -E '_linux_(amd64|arm64)\.deb$' <<<"$assets")
+          for asset in "${required[@]}"; do
+            expected=$(awk -v name="$asset" '$2 == name { print $1 }' "$verify_dir/checksums.txt")
+            if [ -z "$expected" ]; then
+              echo "::error::checksums.txt has no digest for $asset"
+              exit 1
+            fi
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$asset" --dir "$verify_dir"
+            actual=$(sha256sum "$verify_dir/$asset" | awk '{ print $1 }')
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$asset digest does not match checksums.txt"
+              exit 1
+            fi
+          done
+          echo "GitHub release $TAG has all required assets with matching digests."
 
   apt-repo:
     needs: [prepare, release]
@@ -200,10 +222,10 @@ jobs:
       pages: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Configure Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Download .deb assets from the release
         env:
@@ -218,7 +240,7 @@ jobs:
 
       - name: Build signed APT repository
         id: apt
-        uses: morph027/apt-repo-action@v3
+        uses: morph027/apt-repo-action@2acc5b2a47fc257aa6503ef77ca64ff6b0e31298 # v3
         with:
           repo-name: proton-cli
           scan-dir: debs
@@ -237,7 +259,7 @@ jobs:
           import-from-repo-failure-allow: "true"
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: ${{ steps.apt.outputs.dir }}
 
@@ -254,7 +276,7 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deploy
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5
 
   npm-publish:
     needs: [prepare, release]
@@ -265,12 +287,12 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Set up Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 26
           registry-url: "https://registry.npmjs.org"

@@ -34,6 +34,7 @@ Examples:
   proton-cli api POST /core/v4/labels --body '{"Name":"Work","Color":"#8080FF","Type":1}'`,
 		Args: cobra.ExactArgs(2),
 		RunE: kit.Run([]kit.Step{kit.StepAuth}, func(c *kit.Invocation) error {
+			method := strings.ToUpper(c.Args[0])
 			q := make(map[string][]string)
 			for _, kv := range query {
 				key, value, found := strings.Cut(kv, "=")
@@ -45,9 +46,15 @@ Examples:
 			if body != "" && !json.Valid([]byte(body)) {
 				return kit.Fail("--body is not valid JSON.")
 			}
+			if c.App.DryRun && !readOnlyMethod(method) {
+				return kit.Mutate(c, ui.ResultSpec{
+					Action: ui.Updated, Kind: "API requests", Count: 1,
+					Name: method + " " + c.Args[1],
+				}, func() error { return nil })
+			}
 
 			resp, err := c.App.API.Do(c.Ctx, proton.Request{
-				Method: c.Args[0], Path: c.Args[1], Query: q, Body: body,
+				Method: method, Path: c.Args[1], Query: q, Body: body,
 			})
 			if err != nil {
 				// An API error carries a body that explains itself, and that body
@@ -64,4 +71,13 @@ Examples:
 	c.Flags().StringArrayVar(&query, "query", nil, "Query parameter as key=value (repeatable)")
 	c.Flags().StringVar(&body, "body", "", "JSON request body")
 	return c
+}
+
+func readOnlyMethod(method string) bool {
+	switch strings.ToUpper(method) {
+	case "GET", "HEAD", "OPTIONS":
+		return true
+	default:
+		return false
+	}
 }

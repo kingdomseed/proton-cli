@@ -77,6 +77,13 @@ func TestBuildRemindersMapsToDeviceNotifications(t *testing.T) {
 	}
 }
 
+func TestDecryptEventCardRejectsInvalidKeyPacket(t *testing.T) {
+	_, _, _, _, _, _, err := decryptEventCard(nil, "not base64", nil, nil)
+	if err == nil {
+		t.Fatal("decryptEventCard accepted an invalid key packet")
+	}
+}
+
 // ── RSVP: pure seams ──
 
 func TestStatusFromFlag(t *testing.T) {

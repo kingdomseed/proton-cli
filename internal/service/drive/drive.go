@@ -148,8 +148,9 @@ type Link struct {
 		Tags   []int
 	}
 	FileProperties *struct {
-		ContentKeyPacket string
-		ActiveRevision   struct {
+		ContentKeyPacket          string
+		ContentKeyPacketSignature string
+		ActiveRevision            struct {
 			ID    string
 			Photo struct {
 				ContentHash          string

@@ -104,6 +104,50 @@ func (d *Destination) Write(c *Invocation, name string, data []byte) (string, er
 	return target, os.WriteFile(target, data, 0o600)
 }
 
+// WriteStream writes one payload without keeping the complete payload in
+// memory. File output uses a temporary file beside the target, so a failed
+// producer does not leave a partial result at the final path.
+func (d *Destination) WriteStream(c *Invocation, name string, write func(io.Writer) error) (string, error) {
+	if d.output == "-" {
+		return "", write(c.UI().Out)
+	}
+	target, err := d.Reserve(name)
+	if err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(target), ".proton-cli-write-*")
+	if err != nil {
+		return "", err
+	}
+	tmpName := tmp.Name()
+	keep := false
+	defer func() {
+		_ = tmp.Close()
+		if !keep {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := tmp.Chmod(0o600); err != nil {
+		return "", err
+	}
+	if err := write(tmp); err != nil {
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if d.force {
+		if err := os.Remove(target); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+	}
+	if err := os.Rename(tmpName, target); err != nil {
+		return "", err
+	}
+	keep = true
+	return target, nil
+}
+
 // EnsureDir creates a directory if it is missing, and refuses a path that exists
 // as something else.
 func EnsureDir(dir string) error {

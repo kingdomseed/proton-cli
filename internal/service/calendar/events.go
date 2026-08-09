@@ -83,7 +83,7 @@ type rawAttendee struct {
 }
 
 func (e rawEvent) toEvent(ck *calKeys) Event {
-	title, location, description, rrule, _, sig := decryptEventCard(e.SharedEvents, e.SharedKeyPacket, ck.calKR, ck.addrKR)
+	title, location, description, rrule, _, sig, _ := decryptEventCard(e.SharedEvents, e.SharedKeyPacket, ck.calKR, ck.addrKR)
 	return Event{
 		ID: e.ID, CalendarID: e.CalendarID, Title: title, Location: location, Description: description, RRule: rrule,
 		Start: time.Unix(e.StartTime, 0), End: time.Unix(e.EndTime, 0),
@@ -270,7 +270,10 @@ func (s *Service) EventUpdate(ctx context.Context, u *keys.Unlocked, calendarID,
 		return err
 	}
 
-	curTitle, curLoc, curDesc, curRRule, curOrganizer, _ := decryptEventCard(r.Event.SharedEvents, r.Event.SharedKeyPacket, ck.calKR, ck.addrKR)
+	curTitle, curLoc, curDesc, curRRule, curOrganizer, _, err := decryptEventCard(r.Event.SharedEvents, r.Event.SharedKeyPacket, ck.calKR, ck.addrKR)
+	if err != nil {
+		return fmt.Errorf("read existing event before update: %w", err)
+	}
 	if title == "" {
 		title = curTitle
 	}

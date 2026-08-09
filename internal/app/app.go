@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -79,7 +80,10 @@ type Options struct {
 }
 
 func New(opts Options) (*App, error) {
-	profileName := firstNonEmpty(opts.Profile, os.Getenv("PROTON_PROFILE"), "default")
+	profileName, err := session.NormalizeProfile(firstNonEmpty(opts.Profile, os.Getenv("PROTON_PROFILE"), "default"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid profile: %w", err)
+	}
 
 	apiURL := firstNonEmpty(opts.APIURL, envForProfile(profileName, "API_URL"))
 	appVer := firstNonEmpty(opts.AppVersion, envForProfile(profileName, "APP_VERSION"))

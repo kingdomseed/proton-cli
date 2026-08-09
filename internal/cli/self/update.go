@@ -54,6 +54,9 @@ type updateStatus struct {
 func runUpdate(c *kit.Invocation, version, target string, checkOnly, reinstall bool) error {
 	u := c.UI()
 	client := &http.Client{Timeout: 60 * time.Second}
+	if !checkOnly && !selfmanage.SignedUpdatesEnabled {
+		return fmt.Errorf("self-update is disabled because release checksums do not have an independent signature; build and install this fork locally")
+	}
 
 	latest := target
 	if latest == "" {

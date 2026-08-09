@@ -25,7 +25,10 @@ func TestUnlockedTracksTheSealedKeyPassword(t *testing.T) {
 
 func TestPathInNamedProfile(t *testing.T) {
 	d := t.TempDir()
-	got := pathIn(d, "work")
+	got, err := pathIn(d, "work")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := filepath.Join(d, "sessions", "work.json")
 	if got != want {
 		t.Errorf("pathIn(work) = %q, want %q", got, want)
@@ -34,7 +37,10 @@ func TestPathInNamedProfile(t *testing.T) {
 
 func TestPathInEmptyTreatedAsDefault(t *testing.T) {
 	d := t.TempDir()
-	got := pathIn(d, "")
+	got, err := pathIn(d, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := filepath.Join(d, "sessions", "default.json")
 	if got != want {
 		t.Errorf("pathIn(\"\") = %q, want %q", got, want)
@@ -43,10 +49,41 @@ func TestPathInEmptyTreatedAsDefault(t *testing.T) {
 
 func TestPathInDefault(t *testing.T) {
 	d := t.TempDir()
-	got := pathIn(d, "default")
+	got, err := pathIn(d, "default")
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := filepath.Join(d, "sessions", "default.json")
 	if got != want {
 		t.Errorf("pathIn(default) = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeProfileAcceptsSafeNames(t *testing.T) {
+	for _, name := range []string{"default", "work", "Work-2", "mail.backup", "account_3"} {
+		if got, err := NormalizeProfile(name); err != nil || got != name {
+			t.Errorf("NormalizeProfile(%q) = %q, %v", name, got, err)
+		}
+	}
+	if got, err := NormalizeProfile(""); err != nil || got != "default" {
+		t.Errorf("NormalizeProfile(empty) = %q, %v", got, err)
+	}
+}
+
+func TestNormalizeProfileRejectsPathsAndUnsupportedNames(t *testing.T) {
+	for _, name := range []string{"../work", "/tmp/work", `.\\work`, "two words", "müller", "-work"} {
+		if _, err := NormalizeProfile(name); err == nil {
+			t.Errorf("NormalizeProfile(%q) accepted an unsafe name", name)
+		}
+	}
+	if _, err := NormalizeProfile(strings.Repeat("a", maxProfileNameBytes+1)); err == nil {
+		t.Error("NormalizeProfile accepted an overlong name")
+	}
+}
+
+func TestPathInRejectsTraversal(t *testing.T) {
+	if _, err := pathIn(t.TempDir(), "../../outside"); err == nil {
+		t.Fatal("pathIn accepted directory traversal")
 	}
 }
 

@@ -21,6 +21,10 @@ import (
 const (
 	owner = "roman-16"
 	repo  = "proton-cli"
+
+	// SignedUpdatesEnabled stays false until release checksums have an
+	// independent signature that is verified with a key embedded in the CLI.
+	SignedUpdatesEnabled = false
 )
 
 // releasesURL is the base of the GitHub Releases download namespace.

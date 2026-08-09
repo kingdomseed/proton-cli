@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"io"
 	"time"
 
 	"github.com/roman-16/proton-cli/internal/account/keys"
@@ -90,19 +91,18 @@ func exportEML(c *kit.Invocation, u *keys.Unlocked, ids []string, dest *kit.Dest
 
 // exportMbox concatenates every message into one stream.
 func exportMbox(c *kit.Invocation, u *keys.Unlocked, ids []string, dest *kit.Destination, withAttachments bool) error {
-	var stream []byte
-	for _, id := range ids {
-		doc, meta, err := c.App.Mail.Export(c.Ctx, u, id, withAttachments)
-		if err != nil {
-			return err
+	_, err := dest.WriteStream(c, "mail.mbox", func(w io.Writer) error {
+		for _, id := range ids {
+			doc, meta, err := c.App.Mail.Export(c.Ctx, u, id, withAttachments)
+			if err != nil {
+				return err
+			}
+			if _, err := w.Write(mailsvc.MboxEntry(doc, meta)); err != nil {
+				return err
+			}
 		}
-		stream = append(stream, mailsvc.MboxEntry(doc, meta)...)
-	}
-	if dest.Stdout() {
-		_, err := c.UI().Out.Write(stream)
-		return err
-	}
-	_, err := dest.Write(c, "mail.mbox", stream)
+		return nil
+	})
 	return err
 }
 

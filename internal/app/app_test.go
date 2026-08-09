@@ -15,3 +15,9 @@ func TestDefaultUserAgent(t *testing.T) {
 		}
 	}
 }
+
+func TestNewRejectsUnsafeProfileBeforeSetup(t *testing.T) {
+	if _, err := New(Options{Profile: "../../outside"}); err == nil {
+		t.Fatal("New accepted an unsafe profile")
+	}
+}

@@ -150,18 +150,23 @@ func (s *Service) VaultEdit(ctx context.Context, u *keys.Unlocked, shareID, newN
 	if !ok {
 		return fmt.Errorf("no share key for rotation %d", rotation)
 	}
-	vault := &pb.Vault{}
-	if content != "" {
-		if v, err := decryptVault(content, shareKey); err == nil {
-			vault = v
-		}
+	if content == "" {
+		return fmt.Errorf("vault %s has no encrypted content", shareID)
+	}
+	vault, err := decryptVault(content, shareKey)
+	if err != nil {
+		return fmt.Errorf("decrypt vault content: %w", err)
 	}
 	vault.Name = newName
+	latestKey, latestRotation := sk.latest()
+	if latestKey == nil {
+		return fmt.Errorf("vault %s has no usable share key", shareID)
+	}
 	pbBytes, err := proto.Marshal(vault)
 	if err != nil {
 		return err
 	}
-	ct, err := aead.Encrypt(shareKey, pbBytes, []byte(aead.TagVaultContent))
+	ct, err := aead.Encrypt(latestKey, pbBytes, []byte(aead.TagVaultContent))
 	if err != nil {
 		return err
 	}
@@ -170,7 +175,7 @@ func (s *Service) VaultEdit(ctx context.Context, u *keys.Unlocked, shareID, newN
 		Body: map[string]any{
 			"Content":              base64.StdEncoding.EncodeToString(ct),
 			"ContentFormatVersion": 1,
-			"KeyRotation":          rotation,
+			"KeyRotation":          latestRotation,
 		},
 	}, nil)
 }

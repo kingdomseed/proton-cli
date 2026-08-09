@@ -4,6 +4,7 @@
 package ical
 
 import (
+	"crypto/rand"
 	"fmt"
 	"sort"
 	"strconv"
@@ -154,11 +155,11 @@ func prefParam(params string, docIndex int) int {
 }
 
 func EventUID() string {
-	return fmt.Sprintf("%d@proton-cli", time.Now().UnixNano())
+	return rand.Text() + "@proton-cli"
 }
 
 func ContactUID() string {
-	return fmt.Sprintf("proton-cli-%d", time.Now().UnixNano())
+	return "proton-cli-" + rand.Text()
 }
 
 // Attendee is one calendar event participant. Token is the Proton attendee

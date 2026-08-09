@@ -2,6 +2,12 @@ package selfmanage
 
 import "testing"
 
+func TestSelfUpdateStaysDisabledWithoutSignedChecksums(t *testing.T) {
+	if SignedUpdatesEnabled {
+		t.Fatal("self-update must stay disabled until checksum signatures are verified")
+	}
+}
+
 func TestAssetName(t *testing.T) {
 	cases := []struct {
 		goos, goarch string
