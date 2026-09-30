@@ -32,9 +32,10 @@ type Credentials struct {
 	haveUser             bool
 	havePassword         bool
 	haveTOTP             bool
+	prompt               *ui.Prompter
 }
 
-// The prompt labels, declared together so they align in a login sequence.
+// The labels used by the login prompts.
 const (
 	labelEmail    = "Email"
 	labelPassword = "Password"
@@ -133,7 +134,10 @@ func (c *Credentials) resolve(flag, env, label string, secret bool, missing erro
 	if !c.ui.CanPrompt() {
 		return "", missing
 	}
-	ask := c.ui.Ask(labelEmail, labelPassword, labelTOTP)
+	if c.prompt == nil {
+		c.prompt = c.ui.Ask()
+	}
+	ask := c.prompt
 	var (
 		v   string
 		err error

@@ -81,6 +81,8 @@ func (c *Client) Login(ctx context.Context, username string, password []byte, to
 	}
 	c.mu.Lock()
 	c.uid, c.acc, c.ref = auth.UID, auth.AccessToken, auth.RefreshToken
+	// The old key blob belongs to the previous session, not the new tokens.
+	c.encKeyBlob = ""
 	c.mu.Unlock()
 
 	switch {
@@ -183,16 +185,19 @@ func (c *Client) createSession(ctx context.Context) (*authResp, error) {
 	req.Header.Set("x-enforce-unauthsession", "true")
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &NetworkError{Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	b, _ := io.ReadAll(resp.Body)
+	b, err := readAuthResponse(resp)
+	if err != nil {
+		return nil, err
+	}
 	var r authResp
 	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, fmt.Errorf("session parse: %w", err)
 	}
 	if r.Code != 1000 {
-		return nil, fmt.Errorf("session creation code %d: %s", r.Code, string(b))
+		return nil, parseAuthError(b, r.Code)
 	}
 	return &r, nil
 }
@@ -221,7 +226,7 @@ func (c *Client) getAuthInfo(ctx context.Context, username string, reauthScope S
 		return nil, fmt.Errorf("auth info parse: %w", err)
 	}
 	if r.Code != 1000 {
-		return nil, fmt.Errorf("auth info code %d: %s", r.Code, string(raw))
+		return nil, parseAuthError(raw, r.Code)
 	}
 	return &r, nil
 }
@@ -256,7 +261,7 @@ func (c *Client) auth2FA(ctx context.Context, totp string) error {
 		return fmt.Errorf("2FA parse: %w", err)
 	}
 	if r.Code != 1000 {
-		return fmt.Errorf("2FA code %d: %s", r.Code, string(raw))
+		return parseAuthError(raw, r.Code)
 	}
 	return nil
 }
@@ -289,8 +294,24 @@ func (c *Client) rawAuthWithHV(ctx context.Context, method, path string, body []
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, &NetworkError{Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return io.ReadAll(resp.Body)
+	return readAuthResponse(resp)
+}
+
+// readAuthResponse checks the status before parsing an authentication response.
+func readAuthResponse(resp *http.Response) ([]byte, error) {
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		hv, apiErr := classifyErrorBody(resp.StatusCode, body)
+		if hv != nil {
+			return nil, hv
+		}
+		return nil, apiErr
+	}
+	return body, nil
 }

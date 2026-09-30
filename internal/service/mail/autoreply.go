@@ -377,13 +377,21 @@ func (s *Service) AutoReplyGet(ctx context.Context) (*AutoReply, error) {
 
 // AutoReplySet writes a whole auto-responder and enables it, mirroring the web
 // client's form: saving a schedule is what turns the auto-reply on.
-func (s *Service) AutoReplySet(ctx context.Context, ar AutoReply) error {
-	ar.Enabled = true
-	body, err := ar.encode()
+func (s *Service) AutoReplySet(ctx context.Context, req AutoReplyRequest) error {
+	return s.putAutoResponder(ctx, req.body)
+}
+
+// AutoReplyRequest holds a schedule checked before a dry run or a write.
+type AutoReplyRequest struct{ body *apiAutoResponder }
+
+// Request checks the schedule and enables the auto-reply, as the web form does.
+func (a AutoReply) Request() (AutoReplyRequest, error) {
+	a.Enabled = true
+	body, err := a.encode()
 	if err != nil {
-		return err
+		return AutoReplyRequest{}, err
 	}
-	return s.putAutoResponder(ctx, body)
+	return AutoReplyRequest{body: body}, nil
 }
 
 // AutoReplyToggle flips IsEnabled while preserving the stored schedule.

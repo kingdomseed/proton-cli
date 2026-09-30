@@ -1,6 +1,23 @@
 package ui
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+func TestAskWritesTheLabelAndOneSpace(t *testing.T) {
+	u, _, errb := fixture(t, Options{In: strings.NewReader("user@example.com\n123456\n")})
+	p := u.Ask()
+	if _, err := p.Line("Email"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Line("Two-factor code"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := errb.String(), "Email: Two-factor code: "; got != want {
+		t.Errorf("prompts = %q, want %q", got, want)
+	}
+}
 
 // Presence is what counts, whatever the value - the same rule NO_COLOR follows,
 // so the two variables need only one mental model between them.
@@ -53,7 +70,7 @@ func TestCanPromptRespectsBothTheFlagAndTheEnvironment(t *testing.T) {
 func TestPromptRefusalIsActionable(t *testing.T) {
 	t.Setenv("PROTON_NO_INPUT", "1")
 	u, _, errb := fixture(t, Options{})
-	if _, err := u.Ask("Password").Secret("Password"); err == nil {
+	if _, err := u.Ask().Secret("Password"); err == nil {
 		t.Fatal("want a refusal")
 	}
 	if errb.Len() != 0 {

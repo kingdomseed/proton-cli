@@ -71,6 +71,10 @@ type PasswordFunc func() (string, error)
 // key password sealed into the session or, on a first unlock, one derived from
 // the account password.
 func Unlock(ctx context.Context, c *proton.Client, password PasswordFunc) (*Unlocked, error) {
+	user, err := getUser(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("get user: %w", err)
+	}
 	var skp string
 	if c.EncKeyBlob() != "" {
 		// Resume: recover the key password by unwrapping the on-disk blob with the
@@ -86,8 +90,7 @@ func Unlock(ctx context.Context, c *proton.Client, password PasswordFunc) (*Unlo
 		}
 		skp = d
 	} else {
-		// First unlock: derive from the account password, then seal and persist so
-		// no later run has to ask again.
+		// First unlock: derive from the account password. Save it after the keys open.
 		if password == nil {
 			return nil, fmt.Errorf("no password available to unlock the keys")
 		}
@@ -95,18 +98,13 @@ func Unlock(ctx context.Context, c *proton.Client, password PasswordFunc) (*Unlo
 		if err != nil {
 			return nil, err
 		}
-		d, err := deriveSaltedKeyPass(ctx, c, pw)
+		d, err := deriveSaltedKeyPass(ctx, c, user.Keys, pw)
 		if err != nil {
 			return nil, fmt.Errorf("derive key password: %w", err)
 		}
 		skp = d
-		wrapAndPersist(ctx, c, skp)
 	}
 
-	user, err := getUser(ctx, c)
-	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
-	}
 	userKR, err := unlockKeyRing(user.Keys, []byte(skp), nil)
 	if err != nil {
 		return nil, fmt.Errorf("unlock user keys: %w", err)
@@ -124,6 +122,9 @@ func Unlock(ctx context.Context, c *proton.Client, password PasswordFunc) (*Unlo
 	}
 	if len(addrKRs) == 0 {
 		return nil, fmt.Errorf("failed to unlock any address keys")
+	}
+	if c.EncKeyBlob() == "" {
+		wrapAndPersist(ctx, c, skp)
 	}
 	return &Unlocked{UserKR: userKR, AddrKRs: addrKRs, Addresses: addrs}, nil
 }
@@ -181,15 +182,16 @@ func (u *Unlocked) AddrKR(addrID string) (*pgp.KeyRing, bool) {
 	return kr, ok
 }
 
-func deriveSaltedKeyPass(ctx context.Context, c *proton.Client, password string) (string, error) {
+func deriveSaltedKeyPass(ctx context.Context, c *proton.Client, keys []Key, password string) (string, error) {
 	var r struct{ KeySalts []salt }
 	if err := c.Decode(ctx, proton.Request{Method: "GET", Path: "/core/v4/keys/salts"}, &r); err != nil {
 		return "", err
 	}
-	if len(r.KeySalts) == 0 {
-		return "", fmt.Errorf("no key salts returned")
+	keySalt := saltOf(keys, r.KeySalts)
+	if keySalt == "" {
+		return password, nil
 	}
-	ks, err := base64.StdEncoding.DecodeString(r.KeySalts[0].KeySalt)
+	ks, err := base64.StdEncoding.DecodeString(keySalt)
 	if err != nil {
 		return "", err
 	}
@@ -198,6 +200,20 @@ func deriveSaltedKeyPass(ctx context.Context, c *proton.Client, password string)
 		return "", err
 	}
 	return string(sp[len(sp)-31:]), nil
+}
+
+// saltOf matches the primary user key, which Proton returns first, to its salt.
+// Legacy keys without a salt use the password directly.
+func saltOf(keys []Key, salts []salt) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	for _, s := range salts {
+		if s.ID == keys[0].ID {
+			return s.KeySalt
+		}
+	}
+	return ""
 }
 
 func getUser(ctx context.Context, c *proton.Client) (*User, error) {

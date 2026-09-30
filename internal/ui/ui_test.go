@@ -2,12 +2,15 @@ package ui
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/roman-16/proton-cli/internal/errs"
 )
 
 // The ui package is the only place that decides what the CLI looks like, so its
@@ -204,5 +207,35 @@ func TestParseLogLevelRejectsABadEnvironmentValue(t *testing.T) {
 	t.Setenv("PROTON_LOG_LEVEL", "chatty")
 	if _, err := ParseLogLevel(""); err == nil {
 		t.Error("an unusable PROTON_LOG_LEVEL should be reported, not ignored")
+	}
+}
+
+func TestRawRefusesABodyThatIsNotJSON(t *testing.T) {
+	for _, format := range []Format{FormatText, FormatJSON, FormatYAML} {
+		u, out, errb := fixture(t, Options{Format: format})
+		err := Raw(u, []byte("<html>502 Bad Gateway</html>"))
+		if err == nil {
+			t.Fatalf("%s: Raw accepted a body that is not JSON", format)
+		}
+		if out.Len() != 0 {
+			t.Errorf("%s: stdout got %q", format, out.String())
+		}
+		if !strings.Contains(errb.String(), "502 Bad Gateway") {
+			t.Errorf("%s: the body is not on stderr: %q", format, errb.String())
+		}
+		var coder errs.ExitCoder
+		if !errors.As(err, &coder) || coder.ExitCode() != 5 {
+			t.Errorf("%s: an invalid API response should exit 5, got %v", format, err)
+		}
+	}
+}
+
+func TestRawPassesABodyWithNothingInIt(t *testing.T) {
+	u, out, errb := fixture(t, Options{Format: FormatJSON})
+	if err := Raw(u, nil); err != nil {
+		t.Fatal(err)
+	}
+	if out.Len() != 0 || errb.Len() != 0 {
+		t.Errorf("an empty body wrote out=%q err=%q", out.String(), errb.String())
 	}
 }

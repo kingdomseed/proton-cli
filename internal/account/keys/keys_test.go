@@ -1,10 +1,91 @@
 package keys
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/ProtonMail/go-srp"
 	pgp "github.com/ProtonMail/gopenpgp/v2/crypto"
+	"github.com/roman-16/proton-cli/internal/proton"
 )
+
+func TestUnlockUsesMatchingSaltAndSavesOnlyWorkingPasswords(t *testing.T) {
+	const password = "test-password"
+	saltBytes := []byte("0123456789abcdef")
+	stretched, err := srp.MailboxPassword([]byte(password), saltBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := pgp.GenerateKey("Test", "test@example.com", "x25519", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	locked, err := key.Lock(stretched[len(stretched)-31:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	armored, err := locked.Armor()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{password, "wrong-password"} {
+		t.Run(secret, func(t *testing.T) {
+			puts := 0
+			clientKey := ""
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body := map[string]any{"Code": 1000}
+				switch r.URL.Path {
+				case "/core/v4/users":
+					body["User"] = User{ID: "user", Keys: []Key{{ID: "primary", PrivateKey: armored, Active: 1, Primary: 1}}}
+				case "/core/v4/addresses":
+					body["Addresses"] = []Address{{ID: "address", Keys: []Key{{ID: "address-key", PrivateKey: armored, Active: 1, Primary: 1}}}}
+				case "/core/v4/keys/salts":
+					body["KeySalts"] = []salt{
+						{ID: "secondary", KeySalt: base64.StdEncoding.EncodeToString([]byte("fedcba9876543210"))},
+						{ID: "primary", KeySalt: base64.StdEncoding.EncodeToString(saltBytes)},
+					}
+				case "/auth/v4/sessions/local/key":
+					if r.Method == http.MethodPut {
+						puts++
+						var sent struct{ Key string }
+						if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+							t.Error(err)
+						}
+						clientKey = sent.Key
+					} else {
+						body["ClientKey"] = clientKey
+					}
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+				}
+				if err := json.NewEncoder(w).Encode(body); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer srv.Close()
+			c := proton.New(proton.Options{BaseURL: srv.URL})
+			_, err := Unlock(t.Context(), c, func() (string, error) { return secret, nil })
+			if secret != password {
+				if err == nil || puts != 0 || c.EncKeyBlob() != "" {
+					t.Fatalf("wrong password: err=%v, puts=%d, saved=%t", err, puts, c.EncKeyBlob() != "")
+				}
+				return
+			}
+			if err != nil || puts != 1 || c.EncKeyBlob() == "" {
+				t.Fatalf("correct password: err=%v, puts=%d, saved=%t", err, puts, c.EncKeyBlob() != "")
+			}
+			if _, err := Unlock(t.Context(), c, nil); err != nil {
+				t.Fatalf("resume without a password: %v", err)
+			}
+			if puts != 1 {
+				t.Errorf("resume rewrote the session key: puts=%d", puts)
+			}
+		})
+	}
+}
 
 func unlocked(addrs ...Address) *Unlocked {
 	u := &Unlocked{Addresses: addrs, AddrKRs: map[string]*pgp.KeyRing{}}

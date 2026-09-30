@@ -1,6 +1,28 @@
 package app
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/roman-16/proton-cli/internal/ui"
+)
+
+func TestCredentialsKeepAnswersTypedAhead(t *testing.T) {
+	u := ui.New(ui.Options{In: strings.NewReader("user@example.com\npassword\n123456\n")})
+	c := newCredentials("test", u, "", "", "")
+	for _, name := range []string{"PROTON_USER", "PROTON_PASSWORD", "PROTON_TOTP", "PROTON_TEST_USER", "PROTON_TEST_PASSWORD", "PROTON_TEST_TOTP"} {
+		t.Setenv(name, "")
+	}
+	if got, err := c.User(); err != nil || got != "user@example.com" {
+		t.Fatalf("User = %q, %v", got, err)
+	}
+	if got, err := c.Password("sign in"); err != nil || got != "password" {
+		t.Fatalf("Password = %q, %v", got, err)
+	}
+	if got, err := c.TOTP(); err != nil || got != "123456" {
+		t.Fatalf("TOTP = %q, %v", got, err)
+	}
+}
 
 func TestDefaultUserAgent(t *testing.T) {
 	tests := []struct{ in, want string }{

@@ -86,7 +86,7 @@ func (d *Destination) Write(c *Invocation, name string, data []byte) (string, er
 		if !d.force && exists(d.output) {
 			return "", Fail("%s already exists.", d.output).Hint("--force to overwrite it.")
 		}
-		return d.output, os.WriteFile(d.output, data, 0o600)
+		return d.output, commit(d.output, data)
 	}
 	if d.outputDir != "" {
 		if err := EnsureDir(d.outputDir); err != nil {
@@ -101,7 +101,26 @@ func (d *Destination) Write(c *Invocation, name string, data []byte) (string, er
 		}
 		target = free
 	}
-	return target, os.WriteFile(target, data, 0o600)
+	return target, commit(target, data)
+}
+
+// commit replaces the destination with a private file without following links.
+func commit(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".proton-cli-write-*")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // WriteStream writes one payload without keeping the complete payload in
@@ -135,11 +154,6 @@ func (d *Destination) WriteStream(c *Invocation, name string, write func(io.Writ
 	}
 	if err := tmp.Close(); err != nil {
 		return "", err
-	}
-	if d.force {
-		if err := os.Remove(target); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return "", err
-		}
 	}
 	if err := os.Rename(tmpName, target); err != nil {
 		return "", err

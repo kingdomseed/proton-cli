@@ -65,7 +65,7 @@ func autoreplySetCmd() *cobra.Command {
 			"Proton sends every auto-reply with the subject \"Auto\" and offers no way to\n" +
 			"change it, so neither does proton-cli. Auto-reply is a paid feature.",
 		Args: cobra.NoArgs,
-		RunE: kit.Run([]kit.Step{kit.StepAuth}, func(c *kit.Invocation) error {
+		RunE: kit.Run(nil, func(c *kit.Invocation) error {
 			mode, err := repeat.Value()
 			if err != nil {
 				return err
@@ -83,10 +83,19 @@ func autoreplySetCmd() *cobra.Command {
 				msg = mailtext.TextToHTML(msg)
 			}
 			ar.Message = msg
+			req, err := ar.Request()
+			if err != nil {
+				return err
+			}
+			if !c.App.DryRun {
+				if err := c.App.Authenticate(c.Ctx); err != nil {
+					return err
+				}
+			}
 			return kit.Mutate(c, ui.ResultSpec{
 				Action: ui.Enabled, Kind: "settings", Count: 1, Name: "auto-reply",
 				Detail: "on a " + mode + " schedule",
-			}, func() error { return c.App.Mail.AutoReplySet(c.Ctx, ar) })
+			}, func() error { return c.App.Mail.AutoReplySet(c.Ctx, req) })
 		}),
 	}
 	repeat.Register(c)
